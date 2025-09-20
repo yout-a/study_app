@@ -5,16 +5,14 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
-
     <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
-    <%= javascript_include_tag "application", "data-turbo-track": "reload", defer: true %>
+    <%= stylesheet_link_tag "base", "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
   </head>
 
   <body>
     <% if notice %><div style="background:#ecfeff;padding:10px 14px"><%= notice %></div><% end %>
     <% if alert  %><div style="background:#fee2e2;padding:10px 14px"><%= alert  %></div><% end %>
-    <%= stylesheet_link_tag "base", "data-turbo-track": "reload" %>
     <%= yield %>
   </body>
 </html>

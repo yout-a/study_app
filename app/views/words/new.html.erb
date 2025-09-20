@@ -15,39 +15,3 @@
     <%= render "form", word: @word %>
   </section>
 </main>
-
-<%= form_with model: @word, url: words_path, local: true do |f| %>
-  <div class="field">
-    <%= f.label :term, "単語" %>
-    <%= f.text_field :term, id: "term_input" %>
-  </div>
-
-  <div class="field">
-    <%= f.label :meaning, "意味" %>
-    <%= f.text_area :meaning, id: "meaning_textarea", rows: 4 %>
-    <div class="mt-2">
-      <button type="button" class="btn" id="btn-suggest-meaning">
-        AIで意味を提案
-      </button>
-    </div>
-  </div>
-
-  <div class="field">
-    <%= f.label :memo, "メモ" %>
-    <%= f.text_area :memo, id: "memo_textarea", rows: 3 %>
-  </div>
-
-  <div class="field">
-    <%= f.label :tags_string, "タグ（カンマ区切り）" %>
-    <%= f.text_field :tags_string, id: "tags_input" %>
-    <div class="mt-2">
-      <button type="button" class="btn" id="btn-suggest-tags">
-        AIでタグを提案
-      </button>
-    </div>
-  </div>
-
-  <div class="actions">
-    <%= f.submit "登録する", class: "btn primary" %>
-  </div>
-<% end %>

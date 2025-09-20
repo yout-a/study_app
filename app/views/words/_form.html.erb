@@ -1,19 +1,35 @@
-<!-- app/views/words/_form.html.erb -->
-<%= form_with model: @word, class: "form", local: true do |f| %>
-  <%= f.label :term, "単語" %>
-  <%= f.text_field :term, placeholder: "authentication" %>
+<%= form_with model: @word, url: words_path, local: true do |f| %>
+  <div class="field">
+    <%= f.label :term, "単語" %>
+    <%= f.text_field :term, id: "term_input" %>
+  </div>
 
-  <%= f.label :meaning, "意味" %>
-  <%= f.text_area :meaning, placeholder: "本人確認のこと" %>
+  <div class="field">
+    <%= f.label :meaning, "意味" %>
+    <%= f.text_area :meaning, id: "meaning_textarea", rows: 4 %>
+    <div class="mt-2">
+      <button type="button" class="btn" id="btn-suggest-meaning">
+        AIで意味を提案
+      </button>
+    </div>
+  </div>
 
-  <%= f.label :memo, "メモ" %>
-  <%= f.text_area :memo, placeholder: "補足など" %>
+  <div class="field">
+    <%= f.label :memo, "メモ" %>
+    <%= f.text_area :memo, id: "memo_textarea", rows: 3 %>
+  </div>
 
-  <%= f.label :tags_string, "タグ（カンマ区切り）" %>
-  <%= f.text_field :tags_string, placeholder: "API, セキュリティ" %>
+  <div class="field">
+    <%= f.label :tags_string, "タグ（カンマ区切り）" %>
+    <%= f.text_field :tags_string, id: "tags_input" %>
+    <div class="mt-2">
+      <button type="button" class="btn" id="btn-suggest-tags">
+        AIでタグを提案
+      </button>
+    </div>
+  </div>
 
   <div class="actions">
-    <%= f.submit class: "btn primary", value: (@word.persisted? ? "更新する" : "登録する") %>
-    <%= link_to "戻る", words_path, class: "btn" %>
+    <%= f.submit "登録する", class: "btn primary" %>
   </div>
 <% end %>

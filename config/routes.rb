@@ -30,8 +30,6 @@ Rails.application.routes.draw do
 
   # API (チャットボット)
   namespace :api do
-    namespace :v1 do
       post "chat/suggest_word", to: "chat#suggest_word"
-    end
   end
 end
