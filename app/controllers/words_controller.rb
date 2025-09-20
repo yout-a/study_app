@@ -45,6 +45,13 @@ class WordsController < ApplicationController
     end
   end
 
+  def suggest
+    service = ChatGptService.new
+    result = service.suggest_for_word(params[:term])
+
+    render json: result
+  end
+
   def edit; end
 
   def update

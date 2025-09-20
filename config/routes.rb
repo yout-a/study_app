@@ -1,22 +1,37 @@
 # config/routes.rb
 Rails.application.routes.draw do
-  get 'tests/new'
-  get 'tests/show'
   devise_for :users
 
   authenticated :user do
-    root "dashboards#show", as: :authenticated_root
+    root 'dashboards#show', as: :authenticated_root
   end
-  unauthenticated { root "home#index", as: :unauthenticated_root }
+  unauthenticated do
+    root 'home#index', as: :unauthenticated_root
+  end
 
-  resources :words  
+  # 単語
+  resources :words do
+    collection do
+      post :suggest
+    end
+  end
+
+  # テスト
   resources :tests, only: [:new, :create, :show] do
     member do
       get  :start
-      get  :result         # ← 追加
+      get  :result
       get  'q/:pos', to: 'test_runs#show',   as: :question
       post 'q/:pos', to: 'test_runs#answer', as: :answer
     end
   end
-    resource  :dashboards, only: :show
+
+  resource :dashboards, only: :show
+
+  # API (チャットボット)
+  namespace :api do
+    namespace :v1 do
+      post "chat/suggest_word", to: "chat#suggest_word"
+    end
+  end
 end
