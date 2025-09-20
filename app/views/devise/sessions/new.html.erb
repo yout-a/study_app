@@ -1,0 +1,22 @@
+<% content_for :title, "ログイン" %>
+<main class="center">
+  <div class="card narrow">
+    <h1 class="ttl">ログイン</h1>
+    <%= form_for(resource, as: resource_name, url: session_path(resource_name)) do |f| %>
+      <%= render "devise/shared/error_messages", resource: resource %>
+
+      <%= label_tag :email, "メールアドレス" %>
+      <%= f.email_field :email, autofocus: true, autocomplete: "email", placeholder: "you@example.com" %>
+
+      <%= label_tag :password, "パスワード" %>
+      <%= f.password_field :password, autocomplete: "current-password", placeholder: "••••••••" %>
+
+      <div class="row">
+        <label class="hint"><%= f.check_box :remember_me %> ログイン状態を保持</label>
+      </div>
+
+      <%= f.submit "ログイン", class: "btn primary" %>
+      <p class="hint">アカウントがない？ <%= link_to "新規登録", new_registration_path(resource_name) %></p>
+    <% end %>
+  </div>
+</main>

@@ -1,0 +1,17 @@
+<!-- app/views/words/edit.html.erb -->
+<% content_for :title, "単語を編集" %>
+<header class="hdr">
+  <div class="wrap nav">
+    <div class="logo">📘 学習補助アプリ</div>
+    <nav class="links">
+      <%= link_to "単語一覧", words_path %>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card">
+    <h1 class="ttl">単語を編集する</h1>
+    <%= render "form", word: @word %>
+  </section>
+</main>

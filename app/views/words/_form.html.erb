@@ -1,0 +1,19 @@
+<!-- app/views/words/_form.html.erb -->
+<%= form_with model: @word, class: "form", local: true do |f| %>
+  <%= f.label :term, "単語" %>
+  <%= f.text_field :term, placeholder: "authentication" %>
+
+  <%= f.label :meaning, "意味" %>
+  <%= f.text_area :meaning, placeholder: "本人確認のこと" %>
+
+  <%= f.label :memo, "メモ" %>
+  <%= f.text_area :memo, placeholder: "補足など" %>
+
+  <%= f.label :tags_string, "タグ（カンマ区切り）" %>
+  <%= f.text_field :tags_string, placeholder: "API, セキュリティ" %>
+
+  <div class="actions">
+    <%= f.submit class: "btn primary", value: (@word.persisted? ? "更新する" : "登録する") %>
+    <%= link_to "戻る", words_path, class: "btn" %>
+  </div>
+<% end %>

@@ -1,0 +1,25 @@
+<% content_for :title, "新規登録" %>
+<main class="center">
+  <div class="card narrow">
+    <h1 class="ttl">新規登録</h1>
+    <%= form_for(resource, as: resource_name, url: registration_path(resource_name)) do |f| %>
+      <%= render "devise/shared/error_messages", resource: resource %>
+
+      <%= f.label :name, "お名前" %>
+      <%= f.text_field :name, autofocus: true, autocomplete: "name", placeholder: "山田太郎" %>
+
+      <%= f.label :email, "メールアドレス" %>
+      <%= f.email_field :email, autocomplete: "email", placeholder: "you@example.com" %>
+
+      <%= f.label :password, "パスワード" %>
+      <%= f.password_field :password, autocomplete: "new-password", placeholder: "8文字以上" %>
+
+      <%= f.label :password_confirmation, "パスワード確認" %>
+      <%= f.password_field :password_confirmation, autocomplete: "new-password", placeholder: "もう一度入力" %>
+
+      <%= f.submit "登録する", class: "btn primary" %>
+      <p class="hint"><%= link_to "ログインへ戻る", new_session_path(resource_name) %></p>
+    <% end %>
+  </div>
+</main>
+

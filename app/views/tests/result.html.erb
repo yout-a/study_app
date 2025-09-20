@@ -1,0 +1,32 @@
+<header class="hdr"><div class="wrap nav"><div class="logo">🧪 テスト結果</div></div></header>
+<main class="wrap">
+  <section class="card">
+    <h2 class="ttl">スコア</h2>
+    <p>正解数：<b><%= @corrects %></b> / <%= @total %>（正答率 <b><%= @rate %>%</b>）</p>
+    <div class="mt16" style="height:10px;background:#eee;border-radius:999px;overflow:hidden;">
+      <div style="height:10px;width:<%= @rate %>%;background:#16a34a;"></div>
+    </div>
+  </section>
+
+  <% if @wrongs.any? %>
+    <section class="card mt16">
+      <h3 class="ttl">復習（不正解）</h3>
+      <% @wrongs.each do |ans| %>
+        <div class="mt12">
+          <p><b><%= ans.question.body %></b></p>
+          <p>あなたの回答：
+            <%= ans.question_choices.pluck(:body).join(' / ') %>
+          </p>
+          <p>正解：
+            <%= ans.question.question_choices.where(correct: true).pluck(:body).join(' / ') %>
+          </p>
+        </div>
+      <% end %>
+    </section>
+  <% end %>
+
+  <div class="actions">
+    <%= link_to "ダッシュボードへ", authenticated_root_path, class: "btn" %>
+    <%= link_to "同じ設定でもう一度", start_test_path(@test), class: "btn primary" %>
+  </div>
+</main>

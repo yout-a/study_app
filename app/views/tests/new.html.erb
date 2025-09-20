@@ -1,0 +1,46 @@
+<% content_for :title, "テスト設定" %>
+<header class="hdr">
+  <div class="wrap nav">
+    <div class="logo">🧪 テスト設定</div>
+    <nav class="links">
+      <%= link_to "ダッシュボード", authenticated_root_path %>
+      <%= link_to "単語一覧", words_path %>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card">
+    <h1 class="ttl">テストを開始する</h1>
+
+    <%= form_with model: @test, local: true, class: "form" do |f| %>
+      <div class="row">
+        <label>出題範囲</label>
+        <label class="opt"><%= f.radio_button :scope, :unlearned, checked: @test.scope_unlearned? %> 未習得のみ</label>
+        <label class="opt"><%= f.radio_button :scope, :all_words, checked: @test.scope_all_words? %> 全単語</label>
+      </div>
+
+      <div class="row">
+        <%= f.label :item_count, "出題数" %>
+        <%= f.select :item_count, options_for_select([5,10,15,20], @test.item_count) %>
+      </div>
+
+      <div class="row">
+        <label>出題形式</label>
+        <label class="opt"><%= f.radio_button :mode, :single,   checked: @test.single? %> 単一選択</label>
+        <label class="opt"><%= f.radio_button :mode, :multiple, checked: @test.multiple? %> 複数選択</label>
+      </div>
+
+      <div class="row">
+        <label>採点方式</label>
+        <label class="opt"><%= f.radio_button :grading, :batch,     checked: @test.batch? %> まとめて</label>
+        <label class="opt"><%= f.radio_button :grading, :immediate, checked: @test.immediate? %> 即時</label>
+      </div>
+
+      <div class="actions">
+        <%= f.submit "テスト開始", class: "btn primary" %>
+        <%= link_to "キャンセル", authenticated_root_path, class: "btn" %>
+      </div>
+    <% end %>
+  </section>
+</main>

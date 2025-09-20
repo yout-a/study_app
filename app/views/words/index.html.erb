@@ -1,0 +1,58 @@
+<!-- app/views/words/index.html.erb -->
+<% content_for :title, "単語一覧" %>
+<header class="hdr">
+  <div class="wrap nav">
+    <div class="logo">📚 単語一覧</div>
+    <nav class="links">
+      <%= link_to "ダッシュボード", authenticated_root_path %>
+      <%= link_to "新規登録", new_word_path %>
+      <%= link_to "ログアウト", destroy_user_session_path, data: { turbo_method: :delete } %>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <%= form_with url: words_path, method: :get, class: "search", local: true do %>
+    <input type="text" name="q" value="<%= h(@q) %>" placeholder="単語・意味・タグで検索…">
+    <button class="btn">検索</button>
+  <% end %>
+
+  <section class="card">
+    <table class="tbl">
+      <thead>
+        <tr><th>単語</th><th>意味（要約）</th><th>タグ</th><th></th></tr>
+      </thead>
+      <tbody>
+        <% @words.each do |word| %>
+          <tr>
+            <td><%= word.term %></td>
+            <td><%= truncate(word.meaning, length: 40) %></td>
+            <td>
+              <% word.tags.each do |t| %>
+                <span class="tag"><%= t.name %></span>
+              <% end %>
+            </td>
+            <td class="act">
+              <%= link_to "編集", edit_word_path(word) %> /
+              <%= link_to "削除", word_path(word), data: { turbo_method: :delete, turbo_confirm: "削除しますか？" } %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+
+    <!-- 簡易ページング -->
+    <% per = 20; total_pages = (@total.to_f / per).ceil %>
+    <% if total_pages > 1 %>
+      <div class="actions" style="justify-content:flex-end">
+        <% (1..total_pages).each do |p| %>
+          <% if p == @page %>
+            <span class="btn primary"><%= p %></span>
+          <% else %>
+            <%= link_to p, words_path(q: @q, page: p), class: "btn" %>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+  </section>
+</main>

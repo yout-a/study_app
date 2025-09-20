@@ -1,0 +1,21 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  user: one
+  scope: 1
+  item_count: 1
+  mode: 1
+  grading: 1
+  status: 1
+  started_at: 2025-09-19 12:33:50
+  finished_at: 2025-09-19 12:33:50
+
+two:
+  user: two
+  scope: 1
+  item_count: 1
+  mode: 1
+  grading: 1
+  status: 1
+  started_at: 2025-09-19 12:33:50
+  finished_at: 2025-09-19 12:33:50

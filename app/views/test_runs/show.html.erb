@@ -1,0 +1,38 @@
+<% total = @test.test_questions.count %>
+<% pos   = @tq.position %>
+
+<header class="hdr">
+  <div class="wrap nav">
+    <div class="logo">📝 テスト実施</div>
+    <div>Q <%= pos %> / <%= total %></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card">
+    <h2 class="ttl">Q<%= pos %>: <%= @question.body %></h2>
+
+    <%= form_with url: answer_test_path(@test, pos: pos), method: :post do %>
+      <ol style="margin-left:1.2rem">
+        <% @choices.each do |ch| %>
+          <li style="margin: .4rem 0;">
+            <% if @mode_multiple %>
+              <%= check_box_tag "choice_ids[]", ch.id, false, id: "c#{ch.id}" %>
+            <% else %>
+              <%= radio_button_tag "choice_ids[]", ch.id, false, id: "c#{ch.id}" %>
+            <% end %>
+            <label for="c<%= ch.id %>"><%= ch.body %></label>
+          </li>
+        <% end %>
+      </ol>
+
+      <div class="actions">
+        <%= submit_tag(pos == total ? "結果へ" : "次へ", class: "btn primary") %>
+      </div>
+    <% end %>
+
+    <div class="mt16" aria-label="progress" style="height:8px;background:#eee;border-radius:999px;overflow:hidden;">
+      <div style="height:8px;width:<%= (pos*100.0/total).round %>%;background:#2563eb;"></div>
+    </div>
+  </section>
+</main>

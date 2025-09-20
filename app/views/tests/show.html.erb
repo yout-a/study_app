@@ -1,0 +1,17 @@
+<h1>テスト問題一覧</h1>
+<% @test.test_questions.includes(question: :question_choices).order(:position).each do |tq| %>
+  <div class="card mt16">
+    <p><b>Q<%= tq.position %>:</b> <%= tq.question.body %></p>
+    <ol style="margin-left:1.2rem">
+      <% tq.question.question_choices.each do |ch| %>
+        <li><%= ch.body %> <%== ch.correct ? '<span style="color:#16a34a">✔</span>' : '' %></li>
+      <% end %>
+    </ol>
+  </div>
+<% end %>
+
+<div class="actions">
+  <%= link_to "この設定で開始", start_test_path(@test), class: "btn primary" %>
+</div>
+
+

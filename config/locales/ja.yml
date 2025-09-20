@@ -1,0 +1,4 @@
+ja:
+  time:
+    formats:
+      custom: "%Y年%m月%d日 %H:%M"

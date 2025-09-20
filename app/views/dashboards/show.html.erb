@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ダッシュボード</title>
+<link rel="stylesheet" href="/app/assets/stylesheets/base.css">
+</head>
+<body>
+<header class="hdr">
+  <div class="wrap nav">
+    <div class="logo">📘 学習補助アプリ</div>
+    <nav class="links">
+      <%= link_to "単語一覧", words_path %>
+      <%= link_to "新規単語登録", new_word_path %>
+      <%= link_to "テスト開始", new_test_path, class: "btn primary" %>
+      <%= link_to "ログアウト", destroy_user_session_path, data: { turbo_method: :delete } %>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>こんにちは、<%= @user.name.presence || @user.email %> さん</h1>
+
+  <<!-- サマリーカード -->
+  <section class="grid mt16">
+    <div class="card"><h3 class="ttl">実施テスト数</h3><p class="stat"><%= @tests_count %></p></div>
+    <div class="card"><h3 class="ttl">平均正答率</h3><p class="stat"><%= @avg_accuracy %>%</p></div>
+    <div class="card"><h3 class="ttl">前回の終了</h3><p><%= @last_test_at ? l(@last_test_at, format: :custom) : "—" %></p></div>
+  </section>
+
+  <!-- 直近テスト -->
+  <section class="card mt16">
+    <div class="card-header">
+      <h2 class="ttl">最近のテスト</h2>
+      <%= link_to "テストを始める", new_test_path, class: "btn primary" %>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>日時</th>
+          <th>範囲</th>
+          <th>問題数</th>
+          <th>正答率</th>
+          <th>所要</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @recent_tests.each do |t| %>
+          <tr>
+            <td><%= t.finished_at ? l(t.finished_at, format: :custom) : "進行中" %></td>
+            <td><%= t.scope_unlearned? ? "未習得" : "全単語" %></td>
+            <td><%= t.test_questions.count %></td>
+            <td><%= t.accuracy %>%</td>
+            <td><%= t.duration_sec ? "#{t.duration_sec}s" : "—" %></td>
+            <td class="ta-r">
+              <% if t.status_finished? %>
+                <%= link_to "結果", result_test_path(t), class: "btn sm" %>
+              <% else %>
+                <%= link_to "再開", start_test_path(t), class: "btn sm" %>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+        <% if @recent_tests.blank? %>
+          <tr><td colspan="6" class="muted">まだテスト履歴がありません。まずは「テストを始める」をクリック。</td></tr>
+        <% end %>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>
