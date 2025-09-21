@@ -9,10 +9,9 @@ Rails.application.routes.draw do
     root 'home#index', as: :unauthenticated_root
   end
 
-  # 単語
   resources :words do
     collection do
-      post :suggest
+      post :ai_suggest   # /words/ai_suggest
     end
   end
 

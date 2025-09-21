@@ -1,18 +1,20 @@
 <%= form_with model: @word, url: words_path, local: true do |f| %>
   <div class="field">
-    <%= f.label :term, "単語", for: "term_input" %>
-    <%= f.text_field :term, id: "term_input" %>
+    <%= f.label :term, "単語", for: "word_input" %>
+    <%= f.text_field :term, id: "word_input" %>
   </div>
 
   <div class="field">
     <%= f.label :meaning, "意味", for: "meaning_textarea" %>
     <%= f.text_area :meaning, id: "meaning_textarea", rows: 4 %>
+  </div>
 
-    <div class="mt-2">
-      <button type="button" class="btn" id="btn-suggest-meaning">
-        AIで意味を提案
-      </button>
-    </div>
+  <div class="mt-2">
+    <!-- これを押したら「意味+タグ」を同時生成 -->
+    <%= button_tag "AIで意味を提案",
+      type: :button,
+      id: "btn-ai-meaning",
+      class: "btn btn-primary" %>
   </div>
 
   <div class="field">
@@ -21,14 +23,8 @@
   </div>
 
   <div class="field">
-    <%= f.label :tags, "タグ（カンマ区切り）", for: "tags_input" %>
+    <%= f.label :tags_string, "タグ（カンマ区切り）", for: "tags_input" %>
     <%= f.text_field :tags_string, id: "tags_input" %>
-
-    <div class="mt-2">
-      <button type="button" class="btn" id="btn-suggest-tags">
-        AIでタグを提案
-      </button>
-    </div>
   </div>
 
   <div class="actions">
@@ -36,3 +32,4 @@
     <%= link_to "戻る", words_path, class: "btn" %>
   </div>
 <% end %>
+
