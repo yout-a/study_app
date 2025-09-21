@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_09_19_081736) do
+ActiveRecord::Schema[7.1].define(version: 2025_09_21_023839) do
   create_table "answer_selections", charset: "utf8mb4", collation: "utf8mb4_unicode_ci", force: :cascade do |t|
     t.bigint "answer_id", null: false
     t.bigint "question_choice_id", null: false
@@ -105,11 +105,12 @@ ActiveRecord::Schema[7.1].define(version: 2025_09_19_081736) do
 
   create_table "words", charset: "utf8mb4", collation: "utf8mb4_unicode_ci", force: :cascade do |t|
     t.bigint "user_id", null: false
-    t.string "term"
+    t.string "term", null: false
     t.text "meaning"
     t.text "memo"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["user_id", "term"], name: "index_words_on_user_id_and_term_unique", unique: true, length: { term: 191 }
     t.index ["user_id"], name: "index_words_on_user_id"
   end
 

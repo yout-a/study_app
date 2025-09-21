@@ -6,11 +6,12 @@
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
-    <%= stylesheet_link_tag "base", "data-turbo-track": "reload" %>
+    
     <%= javascript_importmap_tags %>
   </head>
 
   <body>
+    <%= stylesheet_link_tag "base", "data-turbo-track": "reload" %>
     <% if notice %><div style="background:#ecfeff;padding:10px 14px"><%= notice %></div><% end %>
     <% if alert  %><div style="background:#fee2e2;padding:10px 14px"><%= alert  %></div><% end %>
     <%= yield %>
