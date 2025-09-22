@@ -66,13 +66,12 @@ class WordsController < ApplicationController
 
   def update
     if @word.update(word_params)
-      redirect_to words_path, notice: "単語を更新しました"
+      redirect_to edit_word_path(@word), notice: "保存しました。"
     else
-      flash.now[:alert] = "入力内容を確認してください"
       render :edit, status: :unprocessable_entity
     end
   end
-
+  
   def destroy
     @word.destroy
     redirect_to words_path, notice: "単語を削除しました"
