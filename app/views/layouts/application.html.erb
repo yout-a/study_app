@@ -6,14 +6,22 @@
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
 
+    <!-- CSS 読み込み -->
     <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag "base", "data-turbo-track": "reload" %>
+
+    <!-- JS 読み込み -->
     <%= javascript_importmap_tags %>
   </head>
 
   <body>
-    <% if notice %><div style="background:#ecfeff;padding:10px 14px"><%= notice %></div><% end %>
-    <% if alert  %><div style="background:#fee2e2;padding:10px 14px"><%= alert  %></div><% end %>
-    <%= stylesheet_link_tag "base", "data-turbo-track": "reload" %>
+    <% if notice %>
+      <div style="background:#ecf; padding:10px 14px"><%= notice %></div>
+    <% end %>
+    <% if alert %>
+      <div style="background:#fee2e2; padding:10px 14px"><%= alert %></div>
+    <% end %>
+
     <%= yield %>
   </body>
 </html>
