@@ -66,58 +66,82 @@ class TestsController < ApplicationController
           kind = (idx.odd? ? :word_to_meaning : :meaning_to_word)
 
           # ---- Question（本文 = 問題文）を用意 --------------
-          q = if Question.reflect_on_association(:word)
-                Question.find_or_initialize_by(word: word)
-              else
-                Question.new
-              end
+          q =
+            if Question.reflect_on_association(:word)
+              Question.find_or_initialize_by(word: word)
+            else
+              Question.new
+            end
 
-          # 本文カラムを安全にセット（存在するものにだけ入れる）
-          def set_if_possible(obj, attrs, value)
-            attr = attrs.find { |a| obj.respond_to?(:"#{a}=") }
-            obj.public_send("#{attr}=", value) if attr
-          end
-
+          # 出題文
           case kind
           when :word_to_meaning
-            # 「次の単語の意味を選べ」
-            set_if_possible(q, %i[content text body title prompt statement], word.term)
+            # A) 単語 → 解説を選ぶ：出題文は「<単語>とは？」
+            stem = "「#{word.term}」とは？"
+            set_if_possible(q, %i[content text body title prompt statement], stem)
           when :meaning_to_word
-            # 「次の説明に当てはまる単語を選べ」
-            set_if_possible(q, %i[content text body title prompt statement], word.meaning)
+            # B) 解説 → 単語を選ぶ：出題文は単語名を含まない抜粋
+            stem = safe_excerpt(word.meaning, banned: [word.term], max_len: 120)
+            set_if_possible(q, %i[content text body title prompt statement], stem)
           end
 
           q.save! unless q.persisted?
 
-          # ---- 4択の作成（既存を一旦クリアして作り直すのが簡単） ----
+          # ---- 4択の作成（既存が回答に使われていれば複製、それ以外は作り直し） ----
           if q.respond_to?(:question_choices)
-            q.question_choices.destroy_all
+            choice_ids  = q.question_choices.select(:id)
+            has_answers = q.persisted? && AnswerSelection.where(question_choice_id: choice_ids).exists?
 
-            # 正解テキスト & 誤選択肢ソース
-            if kind == :word_to_meaning
-              correct_text = word.meaning.presence || "（意味未設定）"
-              # 他語の「意味」から3つ
-              pool = all_words_for_choices.reject { |w| w.id == word.id }
-              distractors = pool.map(&:meaning).compact.uniq.sample(3)
-              texts = ([correct_text] + distractors).shuffle
+            if has_answers
+              dup_q = q.dup
+              dup_q.word = q.word if dup_q.respond_to?(:word=)
+              dup_q.save!
+              q = dup_q
             else
-              correct_text = word.term.presence || "（単語未設定）"
-              # 他語の「単語」から3つ
-              pool = all_words_for_choices.reject { |w| w.id == word.id }
-              distractors = pool.map(&:term).compact.uniq.sample(3)
-              texts = ([correct_text] + distractors).shuffle
+              q.question_choices.destroy_all
+            end
+          end
+
+          # 正解テキスト & 誤選択肢ソース
+          if kind == :word_to_meaning
+            # 正解は “単語名を含まない” 意味の抜粋
+            correct_text = safe_excerpt(word.meaning, banned: [word.term], max_len: 140)
+
+            # 誤選択肢：他語の意味から抜粋（自語名 & その語の名前を除外）
+            pool = all_words_for_choices.reject { |w| w.id == word.id }
+            distractors = pool.map { |w| safe_excerpt(w.meaning, banned: [w.term, word.term], max_len: 140) }
+                              .reject(&:blank?).uniq
+            distractors = distractors.sample(3)
+            while distractors.size < 3
+              filler = safe_excerpt(pool.sample&.meaning, banned: [word.term], max_len: 140)
+              distractors << filler if filler.present? && !distractors.include?(filler)
             end
 
-            # correct フラグ名の違いに配慮（:correct か :is_correct を両対応）
-            texts.each do |txt|
-              attrs = { body: txt }
-              if q.question_choices.new.respond_to?(:correct=)
-                attrs[:correct] = (txt == correct_text)
-              elsif q.question_choices.new.respond_to?(:is_correct=)
-                attrs[:is_correct] = (txt == correct_text)
-              end
-              q.question_choices.create!(attrs)
+            texts = ([correct_text] + distractors).shuffle
+          else # :meaning_to_word
+            # 正解：単語名
+            correct_text = word.term.presence || "（単語未設定）"
+
+            # 誤選択肢：他語の単語名
+            pool = all_words_for_choices.reject { |w| w.id == word.id }
+            distractors = pool.map(&:term).reject(&:blank?).uniq.sample(3)
+            while distractors.size < 3
+              filler = pool.sample&.term
+              distractors << filler if filler.present? && !distractors.include?(filler)
             end
+
+            texts = ([correct_text] + distractors).shuffle
+          end
+
+          # correct フラグ名の違いに配慮（:correct か :is_correct を両対応）
+          texts.each do |txt|
+            attrs = { body: txt }
+            if q.question_choices.new.respond_to?(:correct=)
+              attrs[:correct] = (txt == correct_text)
+            elsif q.question_choices.new.respond_to?(:is_correct=)
+              attrs[:is_correct] = (txt == correct_text)
+            end
+            q.question_choices.create!(attrs)
           end
 
           # ---- テスト順序に並べる ----
@@ -125,13 +149,15 @@ class TestsController < ApplicationController
         end
       end
 
+      # 成功時
       redirect_to question_test_path(@test, pos: 1)
     else
+      # 失敗時
       load_tags
       flash.now[:alert] = @test.errors.full_messages.join("\n")
       render :new, status: :unprocessable_entity
     end
-  end  
+  end
 
   def show
   end
@@ -166,5 +192,24 @@ class TestsController < ApplicationController
     params.require(:test_setting_form).permit(
       :tag_id, :only_unlearned, :question_count, :question_type, :scoring
     )
+  end
+
+  # 指定属性のうち存在する最初のものに値を入れる
+  def set_if_possible(obj, attrs, value)
+    attr = attrs.find { |a| obj.respond_to?(:"#{a}=") }
+    obj.public_send("#{attr}=", value) if attr && value.present?
+  end
+
+  # 文章から禁止語を含まない1文を抜粋（残っていれば除去）して返す
+  def safe_excerpt(text, banned:, max_len: 140)
+    return "" if text.blank?
+    t = text.to_s.gsub(/\r\n|\r|\n/, "。")
+    sentences = t.split(/[。！？!?]/).map(&:strip).reject(&:blank?)
+    banned = Array(banned).compact.uniq
+
+    s = sentences.find { |sen| banned.none? { |w| w.present? && sen.include?(w) } } || sentences.first || t
+    banned.each { |w| s = s.gsub(Regexp.new(Regexp.escape(w)), "") if w.present? }
+    s = s.strip
+    s.length > max_len ? "#{s[0, max_len]}…" : s
   end
 end
