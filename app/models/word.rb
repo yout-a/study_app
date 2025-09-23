@@ -1,12 +1,14 @@
 class Word < ApplicationRecord
   belongs_to :user
 
-  has_many :word_taggings, dependent: :destroy
-  has_many :tags, through: :word_taggings
+  has_many :taggings, dependent: :destroy
+  has_many :tags, through: :taggings
+
+  scope :by_tag, ->(tag_id) { tag_id.present? ? joins(:taggings).where(taggings: { tag_id: tag_id }) : all }
 
   validates :term, presence: true, length: { maximum: 255 },
                    uniqueness: { scope: :user_id, case_sensitive: false }
-  # validates :meaning, presence: true
+  validates :meaning, presence: true
 
   before_validation :normalize_term
 

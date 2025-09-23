@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_09_19_081736) do
+ActiveRecord::Schema[7.1].define(version: 2025_09_23_074548) do
   create_table "answer_selections", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "answer_id", null: false
     t.bigint "question_choice_id", null: false
@@ -48,6 +48,16 @@ ActiveRecord::Schema[7.1].define(version: 2025_09_19_081736) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["word_id"], name: "index_questions_on_word_id"
+  end
+
+  create_table "taggings", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "word_id", null: false
+    t.bigint "tag_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["tag_id"], name: "index_taggings_on_tag_id"
+    t.index ["word_id", "tag_id"], name: "index_taggings_on_word_id_and_tag_id", unique: true
+    t.index ["word_id"], name: "index_taggings_on_word_id"
   end
 
   create_table "tags", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
@@ -96,16 +106,6 @@ ActiveRecord::Schema[7.1].define(version: 2025_09_19_081736) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
-  create_table "word_taggings", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
-    t.bigint "word_id", null: false
-    t.bigint "tag_id", null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["tag_id"], name: "index_word_taggings_on_tag_id"
-    t.index ["word_id", "tag_id"], name: "index_word_taggings_on_word_id_and_tag_id", unique: true
-    t.index ["word_id"], name: "index_word_taggings_on_word_id"
-  end
-
   create_table "words", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "user_id", null: false
     t.string "term", null: false
@@ -124,11 +124,11 @@ ActiveRecord::Schema[7.1].define(version: 2025_09_19_081736) do
   add_foreign_key "answers", "users"
   add_foreign_key "question_choices", "questions"
   add_foreign_key "questions", "words"
+  add_foreign_key "taggings", "tags"
+  add_foreign_key "taggings", "words"
   add_foreign_key "tags", "users"
   add_foreign_key "test_questions", "questions"
   add_foreign_key "test_questions", "tests"
   add_foreign_key "tests", "users"
-  add_foreign_key "word_taggings", "tags"
-  add_foreign_key "word_taggings", "words"
   add_foreign_key "words", "users"
 end

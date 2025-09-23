@@ -1,75 +1,68 @@
-# app/services/gpt_writer.rb
 class GptWriter
   MODEL = (ENV["OPENAI_MODEL"].presence || "gpt-4o-mini")
 
-  def self.rewrite(plain_text:, word:, memo:, max_chars: 500)
+  def self.rewrite(plain_text:, word:, memo:, max_chars: 500, type_hint: nil)
     return { meaning: nil, tags: [] } if plain_text.to_s.strip.empty?
 
     client = OpenAI::Client.new(access_token: ENV["OPENAI_API_KEY"])
 
-    # ...クラス定義などは既存のまま...
+    system_prompt = <<~PROMPT
+      あなたは日本語の百科要約ライターです。与えられた「事実テキスト」と「メモ」を根拠に、
+      語「#{word}」の要約を最大#{max_chars}文字で作成します。出典に無い推測・Q&A形式は禁止。
+      分類ヒントが "person" の場合は「概要｜略歴｜人物エピソード」、
+      "thing" の場合は「概要｜小史｜エピソード/トリビア」をこの順で一段落に含めること。
+      出力は JSON のみ {"meaning":"...", "tags": []}。JSON以外は出力しない。
+    PROMPT
 
-      system_prompt = <<~PROMPT
-        あなたは日本語の百科要約ライターです。与えられた「事実テキスト」と「メモ」を根拠に、
-        語「#{word}」の要約を #{max_chars} 文字以内で作成します。事実テキストに無い内容は書かない。
+    user_input = <<~INPUT
+      単語: #{word}
+      分類ヒント: #{type_hint || "（なし）"}
+      メモ: #{memo}
+      事実テキスト:
+      #{plain_text}
+    INPUT
 
-        1) まず対象の種別を推定しなさい:
-          - person（人物） / organization（組織） / product（製品） / work（作品） / place（地名） / general（一般語）
-        2) 出力は **meaning と tags のJSON**。meaning には以下の体裁で日本語を書き、先頭は必ず「#{word}は」または「【#{word}】は」で始める。Q&A形式（〜の意味は？）は禁止。
-
-        [meaning の書式]
-        - 種別が general（一般語）: 1〜3文の定義・用途のみ。
-        - 種別が person / organization / product / work / place:
-            （a）1〜2文の総括（概要）を最初に書く。
-            （b）見出し「— 概要」を置き、1文で特徴や活動領域を要約。
-            （c）見出し「— 略歴」を置き、年の古い順に最大6件の箇条書き（「・YYYY年 …」形式）。本文に年が無い場合は出来事の時系列が分かる順で。
-            （d）本文に事実がある場合のみ、見出し「— 人物・エピソード」（または「— 特徴」）を置き、最大5件の箇条書き。
-        - 全体で #{max_chars} 文字以内に収める。冗長な敬語・重複は避ける。
-
-        [tags の指示]
-        - 意味のある名詞・固有名詞のみ最大5件。途中で切れた断片や助詞は禁止。
-
-        出力は必ずJSON:
-        {
-          "meaning": "<上記体裁の本文>",
-          "tags": ["..."]
-        }
-      PROMPT
-
-      user_input = <<~INPUT
-        単語: #{word}
-        メモ（関連）: #{memo}
-        事実テキスト:
-        #{plain_text}
-      INPUT
-
-    resp = client.chat(
-      parameters: {
-        model: MODEL,
-        temperature: 0.3,
-        # response_format をお好みで。JSONが壊れる場合は外してください。
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: system_prompt },
-          { role: "user", content: user_input }
-        ]
-      }
-    )
+    resp = client.chat(parameters: {
+      model: MODEL, temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system_prompt },
+        { role: "user",   content: user_input }
+      ]
+    })
 
     raw  = resp.dig("choices", 0, "message", "content").to_s
-    data = JSON.parse(raw) rescue {}
+    data = safe_parse_json_object(raw)     # ← ここが重要
 
     meaning = data["meaning"].to_s.strip
-
-    # ▼ ここを置き換え：タグのクリーニング
-    tags = clean_tags(data["tags"])
+    tags    = clean_tags(data["tags"])
 
     return { meaning: meaning, tags: tags } if meaning.present?
-
     { meaning: nil, tags: [] }
   rescue => e
     Rails.logger.warn("[GptWriter] #{e.class}: #{e.message}")
     { meaning: nil, tags: [] }
+  end
+
+  # 追加：安全パース
+  def self.safe_parse_json_object(str)
+    if (m = str.match(/```json\s*(\{.*?\})\s*```/m))
+      begin; return JSON.parse(m[1]); rescue; end
+    end
+    if (m = str.match(/\{.*\}/m))
+      begin; return JSON.parse(m[0]); rescue; end
+    end
+    # Ruby風 {:meaning=>"..", :tags=>[...]} をJSONへ寄せる
+    begin
+      s = str.dup
+      s.gsub!(/:(\w+)\s*=>/, '"\1":')  # :key=> → "key":
+      s.gsub!("=>", ":")
+      s.gsub!(/:(\w+)(?=[\s,\}])/, '"\1"')
+      s.gsub!(/\bnil\b/, "null")
+      return JSON.parse(s)
+    rescue
+      { "meaning" => nil, "tags" => [] } # 生文字列は返さない
+    end
   end
 
   # ▼ 追加: タグ後処理

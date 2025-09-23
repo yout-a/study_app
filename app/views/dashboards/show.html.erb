@@ -60,7 +60,7 @@
               <% if t.status_finished? %>
                 <%= link_to "結果", result_test_path(t), class: "btn sm" %>
               <% else %>
-                <%= link_to "再開", start_test_path(t), class: "btn sm" %>
+                <%= link_to "再開", resume_test_path(t), class: "btn sm" %>
               <% end %>
             </td>
           </tr>

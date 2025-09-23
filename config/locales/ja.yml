@@ -1,4 +1,12 @@
 ja:
-  time:
+   time:
     formats:
-      custom: "%Y年%m月%d日 %H:%M"
+      custom: "%Y/%m/%d %H:%M"   
+    date:
+      formats:
+        custom: "%Y/%m/%d"         
+    devise:
+      sessions:
+      signed_in: "ログインしました"
+      signed_out: "ログアウトしました"
+      already_signed_out: "すでにログアウトしています"

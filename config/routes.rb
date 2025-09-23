@@ -17,11 +17,14 @@ Rails.application.routes.draw do
 
   # テスト
   resources :tests, only: [:new, :create, :show] do
+    collection do
+      post :start
+    end
     member do
-      get  :start
       get  :result
-      get  'q/:pos', to: 'test_runs#show',   as: :question
-      post 'q/:pos', to: 'test_runs#answer', as: :answer
+      get  :resume
+      get  'q/pos', to: 'test_runs#show',    as: :question
+      post 'q/pos', to: 'test_runs#answer',  as: :answer
     end
   end
 
