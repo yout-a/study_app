@@ -13,33 +13,54 @@
   <section class="card">
     <h1 class="ttl">テストを開始する</h1>
 
-    <%= form_with model: @test, local: true, class: "form" do |f| %>
-      <div class="row">
-        <label>出題範囲</label>
-        <label class="opt"><%= f.radio_button :scope, :unlearned, checked: @test.scope_unlearned? %> 未習得のみ</label>
-        <label class="opt"><%= f.radio_button :scope, :all_words, checked: @test.scope_all_words? %> 全単語</label>
+    <!-- app/views/tests/new.html.erb -->
+    <%= form_with model: @test_setting, url: start_tests_path, method: :post, local: true, data: { turbo: false },class: "test-settings-form" do |f| %>
+
+      <div class="field-group">
+        <div class="field-label">出題範囲</div>
+
+        <div class="field-control">
+          <%# タグ選択（空=全タグ） %>
+          <%= f.collection_select :tag_id, @tags, :id, :name,
+                { include_blank: "全タグ（すべてから出題）" },
+                { class: "form-control w-full" } %>
+
+          <div class="mt-2">
+            <label class="inline-flex items-center gap-2">
+              <%= f.check_box :only_unlearned, { checked: @test_setting.only_unlearned }, "1", "0" %>
+              <span>未習得のみ</span>
+            </label>
+          </div>
+        </div>
       </div>
 
-      <div class="row">
-        <%= f.label :item_count, "出題数" %>
-        <%= f.select :item_count, options_for_select([5,10,15,20], @test.item_count) %>
+      <div class="field-group">
+        <div class="field-label">出題数</div>
+        <div class="field-control">
+          <%= f.select :question_count, options_for_select([5,10,20,30,50], @test_setting.question_count),
+                {}, class: "form-control w-40" %>
+        </div>
       </div>
 
-      <div class="row">
-        <label>出題形式</label>
-        <label class="opt"><%= f.radio_button :mode, :single,   checked: @test.single? %> 単一選択</label>
-        <label class="opt"><%= f.radio_button :mode, :multiple, checked: @test.multiple? %> 複数選択</label>
+      <div class="field-group">
+        <div class="field-label">出題形式</div>
+        <div class="field-control">
+          <label><%= f.radio_button :question_type, "single" %> 単一選択</label>
+          <label class="ml-4"><%= f.radio_button :question_type, "multiple" %> 複数選択</label>
+        </div>
       </div>
 
-      <div class="row">
-        <label>採点方式</label>
-        <label class="opt"><%= f.radio_button :grading, :batch,     checked: @test.batch? %> まとめて</label>
-        <label class="opt"><%= f.radio_button :grading, :immediate, checked: @test.immediate? %> 即時</label>
+      <div class="field-group">
+        <div class="field-label">採点方式</div>
+        <div class="field-control">
+          <label><%= f.radio_button :scoring, "batch" %> まとめて</label>
+          <label class="ml-4"><%= f.radio_button :scoring, "instant" %> 即時</label>
+        </div>
       </div>
 
       <div class="actions">
-        <%= f.submit "テスト開始", class: "btn primary" %>
-        <%= link_to "キャンセル", authenticated_root_path, class: "btn" %>
+        <%= f.submit "テスト開始", class: "btn btn-primary" %>
+        <%= link_to "キャンセル", words_path, class: "btn" %>
       </div>
     <% end %>
   </section>

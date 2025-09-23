@@ -6,17 +6,32 @@ require "erb"
 require "cgi"
 
 class MeaningFinder
+  # 単語だけを拾うためのパターン（漢字/カタカナ/英字/混在の固有名）
+  TERM_PATTERN = /
+    (?:[一-龥々]{2,8})                 | # 漢字  2-8
+    (?:[ァ-ヶー]{2,15})                | # カタカナ 2-15（長め）
+    (?:[A-Za-z]{3,20})                | # 英字 3-20
+    (?:[一-龥々]{1,4}[ァ-ヶー]{1,10}) | # 漢＋カナ 混在
+    (?:[ァ-ヶー]{1,4}[一-龥々]{1,10})
+  /x.freeze
+
+
   class << self
+    # -------------------------------
+    # メイン入口
+    # -------------------------------
     def call(word:, memo: "", tags: [])
+      word = word.to_s.strip
+      memo = memo.to_s.strip
+
       kw    = build_keywords(word, memo, tags)
       query = build_query_string(word, kw)
-
       text, src = fetch_best_summary(query: query, prefer_title: word)
 
       if text.present?
         sanitized = sanitize_plain_text(text)
 
-        # Wikipedia セクション追加
+        # Wikipedia セクション（概要/略歴/人物・エピソード）を追記
         extra = ""
         if src.present? && src.first[:url].to_s.include?("wikipedia.org")
           wiki_title = src.first[:title].to_s.presence || word
@@ -24,30 +39,54 @@ class MeaningFinder
         end
 
         combined = [sanitized, extra].reject(&:blank?).join("\n\n")
+        hint     = type_hint_from(tags, memo)
 
         ai = GptWriter.rewrite(
           plain_text: combined,
-          word: word,
-          memo: memo,
-          max_chars: 650
+          word:       word,
+          memo:       memo,
+          max_chars:  500,
+          type_hint:  hint
         )
 
-        meaning = ai[:meaning].presence || summarize_ja(word: word, base: combined, memo: memo, target_chars: 650)
-        tags_ai = ai[:tags].presence    || SmartTagger.call(text: "#{combined} #{memo}", word: word, memo_keywords: kw, limit: 5)
+        # LLM が壊れた文字列（Ruby風）を返すことがあるのでガード
+        ai_meaning = ai[:meaning]
+        if ai_meaning.is_a?(String) && ai_meaning.strip.start_with?("{:meaning")
+          ai_meaning = nil
+        end
 
-        # ★★ ここが抜けていた ★★
+        fb       = summarize_ja(word: word, base: combined, memo: memo, tags: tags, target_chars: 500)
+        meaning  = ai_meaning.presence || fb[:meaning]
+        meaning  = hard_limit(meaning, 500)
+
+        # タグは “単語のみ” で最終整形（失敗しても単語抽出にフォールバック）
+        tags_ai =
+          begin
+            finalize_tags(
+              ai_tags: ai[:tags],
+              text:    combined,
+              memo:    memo,
+              word:    word,
+              kw:      kw,
+              limit:   5
+            )
+          rescue => e
+            Rails.logger.warn("[MeaningFinder.tags] #{e.class}: #{e.message}")
+            extract_terms("#{combined} #{memo} #{word}").first(5)
+          end
+
         return { meaning: meaning, tags: tags_ai, sources: src, fallback: false }
       end
 
       # 取得失敗 → フォールバック
-      summary = offline_fallback(word: word, memo: memo, target_chars: 650) # ← 650に揃える
-      tags_fb = SmartTagger.call(text: "#{word} #{memo}", word: word, memo_keywords: kw, limit: 5)
+      summary = offline_fallback(word: word, memo: memo, target_chars: 500)
+      tags_fb = extract_terms("#{word} #{memo}").first(5)
       { meaning: summary, tags: tags_fb, sources: [], fallback: true }
     rescue => e
       Rails.logger.warn("[MeaningFinder] #{e.class}: #{e.message}")
       kw ||= build_keywords(word, memo, tags)
-      summary = offline_fallback(word: word, memo: memo, target_chars: 650)
-      tags_fb = SmartTagger.call(text: "#{word} #{memo}", word: word, memo_keywords: kw, limit: 5)
+      summary = offline_fallback(word: word, memo: memo, target_chars: 500)
+      tags_fb = extract_terms("#{word} #{memo}").first(5)
       { meaning: summary, tags: tags_fb, sources: [], fallback: true }
     end
 
@@ -62,22 +101,21 @@ class MeaningFinder
       ("【#{word}】は " + body)[0, target_chars]
     end
 
-    private
-
-    def sanitize_plain_text(text)   # ← self. を付けてクラスメソッドとして明示
+    # -------------------------------
+    # テキスト整形・キーワード
+    # -------------------------------
+    def sanitize_plain_text(text)
       t = text.to_s
       t = t.sub(/\A[【\[\(（"]?[^「【\(\)\]\}」]{1,50}の意味(?:とは)?[」】\)\]\}:：\-–—]*\s*/u, "")
       t.gsub(/\[[^\]]+\]/, "").gsub(/\s+/, " ").strip
     end
 
-    # メモ・タグを検索キーワードに統合
     def build_keywords(_word, memo, tags)
       memo_keys = memo.to_s.gsub(/[、，;]/, ",").split(/[,\s]+/).map(&:strip).reject(&:blank?)
       tag_keys  = Array(tags).map(&:to_s).map(&:strip).reject(&:blank?)
       (memo_keys + tag_keys).uniq.first(10)
     end
 
-    # クエリ文字列を構築（wordは引用符で完全一致狙い、kwは補助）
     def build_query_string(word, kw)
       w = word.to_s.strip
       pieces = []
@@ -100,10 +138,12 @@ class MeaningFinder
       (inter / base).round(3)
     end
 
-    # === 取得戦略 ===
+    # -------------------------------
+    # 要約の取得戦略
+    # -------------------------------
     # 1) exact title → 2) Wikipedia検索 → 3) Wikidata → 4) Wiktionary → 5) DuckDuckGo → 6) DBpedia
     def fetch_best_summary(query:, prefer_title:)
-      cache_key = "meaning_finder:v4:#{normalize(query)}"
+      cache_key = "meaning_finder:v4:#{normalize(query)}:#{normalize(prefer_title)}"
       if (cached = Rails.cache.read(cache_key))
         return cached
       end
@@ -120,10 +160,10 @@ class MeaningFinder
         return [wiki[:text], wiki[:sources]]
       end
 
-      wd = wikidata_description(query)                          # ← 追加実装
+      wd = wikidata_description(query)
       return [wd[:text], wd[:sources]] if wd[:text].present?
 
-      wt = wiktionary_definition(prefer_title)                  # ← 追加実装
+      wt = wiktionary_definition(prefer_title)
       return [wt[:text], wt[:sources]] if wt[:text].present?
 
       ddg = duckduckgo_ia(query)
@@ -159,7 +199,7 @@ class MeaningFinder
     end
 
     def summary(title)
-      t   = ERB::Util.url_encode(title)
+      t   = ERB::Util.url_encode(title.to_s.strip)
       url = "https://ja.wikipedia.org/api/rest_v1/page/summary/#{t}"
       json = http_get_json(url)
       return { text: "", sources: [] } if json.blank? || json["extract"].blank?
@@ -173,30 +213,27 @@ class MeaningFinder
       { text: text, sources: src, type: type_sym }
     end
 
-    # --- Wikidata: 検索→日本語説明（追加） ---
+    # --- Wikidata: 検索→日本語説明 ---
     def wikidata_description(query)
       q = ERB::Util.url_encode(query.to_s.strip)
       url = "https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=ja&uselang=ja&limit=1&search=#{q}"
       json = http_get_json(url)
-
       hit = Array(json["search"]).first
       return { text: "", sources: [] } if hit.blank?
 
       desc  = hit["description"].to_s.strip
       label = hit["label"].to_s.strip
       page  = "https://www.wikidata.org/wiki/#{hit["id"]}"
-
       { text: desc, sources: [{ title: label.presence || query, url: page }] }
     rescue
       { text: "", sources: [] }
     end
 
-    # --- Wiktionary: プレーンテキスト定義（追加） ---
+    # --- Wiktionary: プレーンテキスト定義 ---
     def wiktionary_definition(title)
       t = ERB::Util.url_encode(title.to_s.strip)
       url = "https://ja.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&format=json&redirects=1&titles=#{t}"
       json = http_get_json(url)
-
       page    = json.dig("query", "pages")&.values&.first
       extract = page.to_h["extract"].to_s.strip
       return { text: "", sources: [] } if extract.blank?
@@ -249,12 +286,10 @@ class MeaningFinder
     end
 
     # --- 共通HTTP(JSON) ---
-    # 好みに応じて .env で上書きできるように
-    HTTP_OPEN_TIMEOUT = ENV.fetch("HTTP_OPEN_TIMEOUT", "5").to_i   # 既定 5s
-    HTTP_READ_TIMEOUT = ENV.fetch("HTTP_READ_TIMEOUT", "12").to_i  # 既定 12s
-    HTTP_RETRY        = ENV.fetch("HTTP_RETRY", "2").to_i          # 既定 2回リトライ
+    HTTP_OPEN_TIMEOUT = ENV.fetch("HTTP_OPEN_TIMEOUT", "5").to_i
+    HTTP_READ_TIMEOUT = ENV.fetch("HTTP_READ_TIMEOUT", "12").to_i
+    HTTP_RETRY        = ENV.fetch("HTTP_RETRY", "2").to_i
 
-    # --- 共通HTTP(JSON) ---
     def http_get_json(url_or_uri, tries: HTTP_RETRY)
       uri = url_or_uri.is_a?(URI) ? url_or_uri : URI.parse(url_or_uri)
 
@@ -264,16 +299,19 @@ class MeaningFinder
         open_timeout: HTTP_OPEN_TIMEOUT,
         read_timeout: HTTP_READ_TIMEOUT
       ) do |http|
-        res = http.get(uri.request_uri, { "User-Agent" => "StudyApp/1.0 (+rails)" })
+        res = http.get(uri.request_uri, {
+          "User-Agent"      => "StudyApp/1.0 (+rails)",
+          "Accept"          => "application/json",
+          "Accept-Language" => "ja,en;q=0.7"
+        })
         return JSON.parse(res.body) if res.is_a?(Net::HTTPSuccess)
         Rails.logger.warn("[MeaningFinder.http] HTTP #{res.code} #{uri}")
       end
-
       {}
     rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ETIMEDOUT => e
       Rails.logger.warn("[MeaningFinder.http] timeout #{e.class} #{uri}")
       if (tries -= 1) >= 0
-        sleep(0.2 * (HTTP_RETRY - tries)) # ちょいバックオフ
+        sleep(0.2 * (HTTP_RETRY - tries))
         retry
       end
       {}
@@ -282,44 +320,47 @@ class MeaningFinder
       {}
     end
 
-    # --- セクション構成の簡易サマリ（人物/製品にも対応） ---
-    def summarize_ja(word:, base:, memo:, target_chars: 500)
-      text = base.to_s.gsub(/\[[^\]]+\]/, "").gsub(/\s+/, " ").strip
-      return offline_fallback(word: word, memo: memo, target_chars: target_chars) if text.blank?
-
-      sents = text.split(/(?<=。)/)
-
-      # 概要（先頭から情報密度の高い2文）
-      overview = sents.first(2).join
-
-      # 略歴: 年の入った文 / デビュー・発売・公開・受賞などの出来事
-      bio_keys = /(19|20)\d{2}年|デビュー|活動開始|発売|公開|受賞|設立|解散|復帰|加入|卒業|結成/u
-      bio = sents.select { |s| s =~ bio_keys }.uniq.first(8)
-      # 年の数字を抽出しソート（年が無いものは後ろ）
-      bio = bio.sort_by { |s| (s[/((?:19|20)\d{2})年/, 1] || "9999").to_i }
-
-      # エピソード/特徴
-      epi_keys = /愛称|挨拶|ファン|ASMR|配信|趣味|特徴|身長|誕生日|デザイン|衣装|キャラクター|受賞|代表作|別名|異名/u
-      episodes = (sents - bio).select { |s| s =~ epi_keys }.uniq.first(6)
-
-      # 組み立て
-      out = +"【#{word}】は " + overview
-      out << "\n\n— 概要\n" << (sents[0] || "")
-      if bio.any?
-        out << "\n\n— 略歴\n"
-        bio.first(6).each { |b| out << "・" << b.sub(/。$/, "。") }
-      end
-      if episodes.any?
-        out << "\n\n— 人物・エピソード\n"
-        episodes.first(5).each { |e| out << "・" << e.sub(/。$/, "。") }
-      end
-
-      # 文字数制限
-      out = out[0, target_chars]
-      out << "…" if out.size == target_chars && out[-1] != "。"
+    # -------------------------------
+    # LLM 整形
+    # -------------------------------
+    def summarize_ja(word:, base:, memo:, tags:, target_chars: 500)
+      hint = type_hint_from(tags, memo)
+      out  = GptWriter.rewrite(
+        plain_text: base, word: word, memo: memo,
+        max_chars: target_chars, type_hint: hint
+      )
+      out[:meaning] = hard_limit(out[:meaning], target_chars)
       out
     end
-    # === Wikipedia セクションをテキストで取得（概要/略歴/人物） ===
+
+    def type_hint_from(tags, memo)
+      arr = Array(tags).map(&:to_s) + memo.to_s.scan(/#\S+/)
+      a = arr.map(&:downcase)
+      return "person" if a.any? { |s|
+        s.include?("人物") || s.include?("#人物") ||
+        s.include?("vtuber") || s.include?("youtuber") ||
+        s.include?("声優") || s.include?("俳優") || s.include?("歌手")
+      }
+      return "thing" if a.any? { |s|
+        s.include?("物") || s.include?("#物") ||
+        s.include?("製品") || s.include?("商品") ||
+        s.include?("道具") || s.include?("デバイス") || s.include?("ガジェット")
+      }
+      nil
+    end
+
+    def hard_limit(text, max)
+      s = text.to_s.strip
+      m = max.to_i
+      return s if m <= 0 || s.size <= m
+
+      body = s[0, m - 1].rstrip   # 省略記号分を確保
+      body + "…"                  # 仕上がりは必ず m 文字以内
+    end
+
+    # -------------------------------
+    # Wikipedia セクション抽出
+    # -------------------------------
     def wikipedia_sections_plain(title)
       idx = wikipedia_section_indices(title)
       return "" if idx.values.all?(&:nil?)
@@ -335,7 +376,6 @@ class MeaningFinder
       if idx[:bio]
         html = wikipedia_section_html(title, idx[:bio])
         bio  = section_html_to_text(html)
-        # 年が入った行を優先して最大6件
         bio_lines = bio.split(/\R/).map(&:strip).reject(&:blank?)
         bio_lines = bio_lines.select { |l| l =~ /(18|19|20)\d{2}年/ }.first(6)
         pieces << "略歴\n" << bio_lines.map { |l| "・#{l}" }.join("\n") if bio_lines.any?
@@ -353,7 +393,6 @@ class MeaningFinder
       ""
     end
 
-    # 対象セクションの index を探す（概要/来歴(経歴/略歴)/人物(エピソード/人物像/特徴)）
     def wikipedia_section_indices(title)
       t = ERB::Util.url_encode(title.to_s)
       url = "https://ja.wikipedia.org/w/api.php?action=parse&page=#{t}&prop=sections&format=json&redirects=1"
@@ -363,7 +402,7 @@ class MeaningFinder
       find_idx = ->(patterns) do
         pat = Regexp.union(patterns)
         found = secs.find { |s| s["line"].to_s.match?(pat) }
-        found && found["index"]
+        found && s = found["index"]
       end
 
       {
@@ -375,19 +414,16 @@ class MeaningFinder
       { overview: nil, bio: nil, episode: nil }
     end
 
-    # セクションHTMLを取得
     def wikipedia_section_html(title, index)
       return "" if index.blank?
       t = ERB::Util.url_encode(title.to_s)
       url = "https://ja.wikipedia.org/w/api.php?action=parse&page=#{t}&prop=text&section=#{index}&format=json&redirects=1"
       json = http_get_json(url)
-      html = json.dig("parse", "text", "*").to_s
-      html
+      json.dig("parse", "text", "*").to_s
     rescue
       ""
     end
 
-    # HTML → プレーンテキスト（箇条書きは行に）
     def section_html_to_text(html)
       return "" if html.blank?
       txt = html.dup
@@ -397,6 +433,94 @@ class MeaningFinder
       txt = CGI.unescapeHTML(txt.gsub(/<[^>]+>/, ""))
       txt.lines.map(&:strip).reject(&:blank?).join("\n")
     end
-  end
-end
 
+    # 語頭として許すか（漢字/カタカナ/英字）
+    def word_head?(t)
+      !!(t =~ /\A[一-龥々]|[ァ-ヶ]|[A-Za-z]/)
+    end
+
+    # 小書きカナで始まる（左欠けの典型）は除外
+    def small_kana_head?(t)
+      !!(t =~ /\A[ァィゥェォャュョヮッ]/)
+    end
+
+    # 記号の正規化（比較用）：ハイフン類→長音「ー」
+    def normalize_marks(s)
+      s.to_s.gsub("－–—ｰ-‐", "ー")
+    end
+
+    # 単語だけ抽出（頻度順→長さ順）
+    def extract_terms(str)
+      return [] if str.blank?
+      freq = Hash.new(0)
+      str.to_s.scan(TERM_PATTERN) { |m| freq[m] += 1 }
+      freq.sort_by { |(k,v)| [-v, -(k.length)] }.map(&:first)
+    end
+
+    def finalize_tags(ai_tags:, text:, memo:, word:, kw:, limit: 5)
+      begin
+        pool = []
+        pool.concat Array(ai_tags).compact.map(&:to_s)
+        pool.concat Array(kw).compact.map(&:to_s)
+        pool << word.to_s
+        pool.concat extract_terms(text)
+        pool.concat extract_terms(memo)
+
+        # 1) 単語だけに強制（非破壊メソッドでチェイン）
+        pool = pool
+          .flat_map { |t| t.to_s.scan(TERM_PATTERN) }
+          .map     { |t| t.ascii_only? ? t.downcase : t }
+          .map     { |t| t.strip }
+          .reject  { |t| t.blank? }
+          .uniq
+
+        # 2) 語頭バリデーション（記号/小書きカナで始まる欠けを落とす）
+        pool = pool.select { |t| word_head?(t) && !small_kana_head?(t) }
+
+        # 3) 本文に“その語がそのまま出ている”ものだけ採用（記号正規化して照合）
+        body_norm   = normalize_marks("#{text} #{memo} #{word}")
+        valid_terms = extract_terms(body_norm)                            
+        valid_kw    = Array(kw).flat_map { |k| extract_terms(normalize_marks(k.to_s)) }
+        valid_set   = (valid_terms + valid_kw).uniq                     
+
+        pool = pool.select { |t| valid_set.include?(normalize_marks(t)) }        
+        end
+
+        # 元語を優先候補に
+        w = word.to_s.strip
+        pool.unshift(w) if w.present? && (w =~ TERM_PATTERN)
+
+        kw_norm = Array(kw).map { |k| normalize_marks(k.to_s) }
+
+        pool = pool.sort_by { |t| -t.size }   # 長い順に並べる
+        fixed = pool.dup                      # 比較用の固定リスト
+
+        pool = pool.reject do |t|
+          tn = normalize_marks(t)
+          # 見出し語 w / kw に入っている語は保護
+          next false if t == w || kw_norm.include?(tn)
+
+          # 正規化してから「長い語がこの語で始まる」なら短い方を落とす
+          fixed.any? { |u| u != t && normalize_marks(u).start_with?(tn) }
+        end
+
+        # スコアリング（切り詰めは絶対にしない）
+        score = Hash.new(0.0)
+        
+        pool.each do |t|
+          score[t] += 1.0
+          score[t] += 1.2 if t == w
+          score[t] += 0.8 if Array(kw).any? { |k| normalize_marks(k.to_s).include?(normalize_marks(t)) }
+          score[t] += 0.6 if normalize_marks(memo).include?(normalize_marks(t))
+          score[t] += 1.0 - ((t.size - 5).abs * 0.25) # “5文字くらいが好ましい”だけ
+          score[t] += 0.2 if t =~ /[ァ-ヶー]/
+          score[t] += 0.2 if t =~ /[一-龥々]/
+        end
+
+        pool.sort_by { |t| -score[t] }.first(limit)
+      rescue => e
+        Rails.logger.warn("[MeaningFinder.finalize_tags] #{e.class}: #{e.message}")
+        extract_terms(normalize_marks("#{text} #{memo} #{word}")).first(limit)
+      end
+    end
+  end

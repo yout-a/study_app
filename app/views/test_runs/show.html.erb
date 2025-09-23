@@ -10,7 +10,7 @@
 
 <main class="wrap">
   <section class="card">
-    <h2 class="ttl">Q<%= pos %>: <%= @question.body %></h2>
+    <h2 class="ttl">Q<%= pos %>: <%= @question.display_text.presence || "（問題文が未設定です）" %></h2>
 
     <%= form_with url: answer_test_path(@test, pos: pos), method: :post do %>
       <ol style="margin-left:1.2rem">
@@ -21,7 +21,7 @@
             <% else %>
               <%= radio_button_tag "choice_ids[]", ch.id, false, id: "c#{ch.id}" %>
             <% end %>
-            <label for="c<%= ch.id %>"><%= ch.body %></label>
+            <label for="c-<%= ch.id %>"><%= ch.display_text %></label>
           </li>
         <% end %>
       </ol>
