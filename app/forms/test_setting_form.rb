@@ -7,7 +7,7 @@ class TestSettingForm
   attribute :only_unlearned, :boolean, default: true
   attribute :question_count, :integer, default: 10
   attribute :question_type, :string,  default: "single" # "single" / "multiple"
-  attribute :scoring, :string,       default: "batch"   # "batch" / "instant"
+  attribute :grading, :string,       default: "batch"   # "batch" / "instant"
 
   validates :question_count, inclusion: { in: [5,10,20,30,50] }, allow_nil: true
 
@@ -17,7 +17,7 @@ class TestSettingForm
       only_unlearned: ActiveModel::Type::Boolean.new.cast(only_unlearned),
       question_count: (question_count.presence || 10).to_i,
       question_type: question_type,
-      scoring: scoring
+      grading: grading
     }
   end
 end

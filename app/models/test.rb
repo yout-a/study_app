@@ -11,7 +11,7 @@ class Test < ApplicationRecord
   # enum（整数カラム）
   enum scope:   { unlearned: 0, all_words: 1 }, _prefix: :scope           # 出題範囲
   enum mode:    { single: 0, multiple: 1 }          # 出題形式
-  enum grading: { batch: 0, immediate: 1 }          # 採点方式
+  enum grading: { batch: 0, instant: 1 }          # 採点方式
   enum status:  { scheduled: 0, running: 1, finished: 2 }, _prefix: :status
 
   # === 便利エイリアス（_prefix を気にせず使える短縮版） ===

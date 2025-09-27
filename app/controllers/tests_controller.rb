@@ -11,7 +11,7 @@ class TestsController < ApplicationController
       only_unlearned: true,    # 既定：未習得のみ
       question_count: 10,
       question_type: "single",
-      scoring: "batch"
+      grading: "batch"
     )
   end
 
@@ -58,11 +58,13 @@ def start
       Test.defined_enums["scope"].keys.first # 例: "unlearned" など
     end
 
+  grading_mode = (@test_setting.grading.presence || "batch").to_s
+
   @test = Test.new(
     user:       current_user,
     item_count: @test_setting.question_count,
     mode:       @test_setting.question_type,
-    grading:    @test_setting.scoring
+    grading:    grading_mode
   )
   @test.scope = scope_key if scope_key.present? && @test.respond_to?(:scope=)
 
@@ -220,14 +222,21 @@ def start
     @test = current_user.tests.find(params[:id])
   end
 
+  include TagsHelper
+
   def load_tags
-    @tags = Tag.order(:name)
+    raw = Tag.all
+    @tags = sort_tags_gojuon(Tag.all)
   end
 
   def test_setting_params
     params.require(:test_setting_form).permit(
-      :tag_id, :question_count, :question_type, :scoring,
-      tag_ids: [] # 将来の複数選択に備えて許可
+      :tag_id,
+      :question_count,
+      :question_type,
+      :only_unlearned,        # ← 追加
+      :grading,
+      tag_ids: []             # 将来の複数選択用
     )
   end
 
