@@ -1,3 +1,4 @@
+# app/controllers/tests_controller.rb
 class TestsController < ApplicationController
   before_action :authenticate_user!
   before_action :set_test,  only: [:show, :result, :resume]
@@ -26,141 +27,176 @@ class TestsController < ApplicationController
   end
 
   # テスト開始
-  def start
-    @test_setting = TestSettingForm.new(test_setting_params)
-    unless @test_setting.valid?
-      load_tags
-      return render :new, status: :unprocessable_entity
+  # app/controllers/tests_controller.rb （startだけ差し替え）
+def start
+  @test_setting = TestSettingForm.new(test_setting_params)
+  unless @test_setting.valid?
+    load_tags
+    return render :new, status: :unprocessable_entity
+  end
+
+  # タグ選択の取得（単一/複数OK）
+  raw_tag_ids   = @test_setting.respond_to?(:tag_ids) ? @test_setting.tag_ids : nil
+  tag_ids       = Array(raw_tag_ids.presence || @test_setting.tag_id).reject(&:blank?).map(&:to_i)
+  selected_tags = tag_ids.present? ? Tag.where(id: tag_ids) : Tag.none
+
+  # 出題範囲（未習得フィルタは廃止済み）
+  scope =
+    if selected_tags.any? && Word.respond_to?(:by_tags)
+      Word.by_tags(tag_ids)
+    elsif Word.respond_to?(:by_tag)
+      Word.by_tag(tag_ids.first)
+    else
+      Word.all
     end
 
-    # 出題抽出（タグ＆未習得フィルタ）
-    scope = Word.by_tag(@test_setting.tag_id)
-    if ActiveModel::Type::Boolean.new.cast(@test_setting.only_unlearned)
-      scope = scope.respond_to?(:unlearned) ? scope.unlearned : scope
+  @questions = scope.order(Arel.sql("RAND()")).limit(@test_setting.question_count)
+
+  # ★ enumの都合で必要なら scope を「合法キー」に自動設定
+  scope_key =
+    if Test.respond_to?(:defined_enums) && Test.defined_enums["scope"].present?
+      Test.defined_enums["scope"].keys.first # 例: "unlearned" など
     end
-    @questions = scope.order(Arel.sql("RAND()")).limit(@test_setting.question_count)
 
-    # Test 作成（scope は enum を想定して既存値のみ）
-    scope_name = ActiveModel::Type::Boolean.new.cast(@test_setting.only_unlearned) ? "unlearned" : "all"
-    test_attrs = {
-      user:       current_user,
-      scope:      scope_name,
-      item_count: @test_setting.question_count,
-      mode:       @test_setting.question_type, # enum 想定: single/multiple
-      grading:    @test_setting.scoring       # enum 想定: batch/instant
-    }
+  @test = Test.new(
+    user:       current_user,
+    item_count: @test_setting.question_count,
+    mode:       @test_setting.question_type,
+    grading:    @test_setting.scoring
+  )
+  @test.scope = scope_key if scope_key.present? && @test.respond_to?(:scope=)
 
-    @test = Test.new(test_attrs)
+  @test.save!
 
-    if @test.save
-      # 4択用のダミー候補を引くプール（自分以外）
-      all_words_for_choices = Word.where.not(id: @questions.map(&:id)).to_a
-      # もし出題数が少なくプールが足りない場合は全体から補完
-      all_words_for_choices = Word.all.to_a if all_words_for_choices.size < 10
+  # テスト⇔タグ紐づけ
+  if selected_tags.any?
+    if @test.respond_to?(:tags) && @test.tags.respond_to?(:<<)
+      @test.tags = selected_tags
+    elsif @test.respond_to?(:tag=)
+      @test.tag = selected_tags.first
+    end
+  end
 
-      ApplicationRecord.transaction do
-        @questions.each.with_index(1) do |word, idx|
-          # --- 2種類の問題タイプを半々で生成 ---------------
-          # ① 単語→意味 を選択
-          # ② 意味→単語 を選択
-          kind = (idx.odd? ? :word_to_meaning : :meaning_to_word)
+  # 履歴表示用ラベル（タグ名を固定保存）
+  label = selected_tags.any? ? selected_tags.map(&:name).join("、") : "全単語"
+  set_if_possible(@test, %i[scope_label scope_text range_label scope_names], label)
+  @test.save! if @test.changed?
 
-          # ---- Question（本文 = 問題文）を用意 --------------
-          q =
-            if Question.reflect_on_association(:word)
-              Question.find_or_initialize_by(word: word)
-            else
-              Question.new
-            end
+  # 選択肢も同じ範囲から
+  choice_pool_words = scope.to_a
 
-          # 出題文
-          case kind
-          when :word_to_meaning
-            # A) 単語 → 解説を選ぶ：出題文は「<単語>とは？」
-            stem = "「#{word.term}」とは？"
-            set_if_possible(q, %i[content text body title prompt statement], stem)
-          when :meaning_to_word
-            # B) 解説 → 単語を選ぶ：出題文は単語名を含まない抜粋
-            stem = safe_excerpt(word.meaning, banned: [word.term], max_len: 120)
-            set_if_possible(q, %i[content text body title prompt statement], stem)
-          end
+ ApplicationRecord.transaction do
+  @questions.each.with_index(1) do |word, idx|
+    kind = (idx.odd? ? :word_to_meaning : :meaning_to_word)
 
-          q.save! unless q.persisted?
+    pool = choice_pool_words.reject { |w| w.id == word.id }
 
-          # ---- 4択の作成（既存が回答に使われていれば複製、それ以外は作り直し） ----
-          if q.respond_to?(:question_choices)
-            choice_ids  = q.question_choices.select(:id)
-            has_answers = q.persisted? && AnswerSelection.where(question_choice_id: choice_ids).exists?
+    # ★★★ 追加：意味→単語が曖昧なら単語→意味に切り替え ★★★
+    if kind == :meaning_to_word && ambiguous_meaning_to_word?(word, pool)
+      kind = :word_to_meaning
+    end
 
-            if has_answers
-              dup_q = q.dup
-              dup_q.word = q.word if dup_q.respond_to?(:word=)
-              dup_q.save!
-              q = dup_q
-            else
-              q.question_choices.destroy_all
-            end
-          end
-
-          # 正解テキスト & 誤選択肢ソース
-          if kind == :word_to_meaning
-            # 正解は “単語名を含まない” 意味の抜粋
-            correct_text = safe_excerpt(word.meaning, banned: [word.term], max_len: 140)
-
-            # 誤選択肢：他語の意味から抜粋（自語名 & その語の名前を除外）
-            pool = all_words_for_choices.reject { |w| w.id == word.id }
-            distractors = pool.map { |w| safe_excerpt(w.meaning, banned: [w.term, word.term], max_len: 140) }
-                              .reject(&:blank?).uniq
-            distractors = distractors.sample(3)
-            while distractors.size < 3
-              filler = safe_excerpt(pool.sample&.meaning, banned: [word.term], max_len: 140)
-              distractors << filler if filler.present? && !distractors.include?(filler)
-            end
-
-            texts = ([correct_text] + distractors).shuffle
-          else # :meaning_to_word
-            # 正解：単語名
-            correct_text = word.term.presence || "（単語未設定）"
-
-            # 誤選択肢：他語の単語名
-            pool = all_words_for_choices.reject { |w| w.id == word.id }
-            distractors = pool.map(&:term).reject(&:blank?).uniq.sample(3)
-            while distractors.size < 3
-              filler = pool.sample&.term
-              distractors << filler if filler.present? && !distractors.include?(filler)
-            end
-
-            texts = ([correct_text] + distractors).shuffle
-          end
-
-          # correct フラグ名の違いに配慮（:correct か :is_correct を両対応）
-          texts.each do |txt|
-            attrs = { body: txt }
-            if q.question_choices.new.respond_to?(:correct=)
-              attrs[:correct] = (txt == correct_text)
-            elsif q.question_choices.new.respond_to?(:is_correct=)
-              attrs[:is_correct] = (txt == correct_text)
-            end
-            q.question_choices.create!(attrs)
-          end
-
-          # ---- テスト順序に並べる ----
-          @test.test_questions.create!(question: q, position: idx)
-        end
+    # ---- Question を用意 ----
+    q =
+      if Question.reflect_on_association(:word)
+        Question.find_or_initialize_by(word: word)
+      else
+        Question.new
       end
 
-      # 成功時
-      redirect_to question_test_path(@test, pos: 1)
-    else
-      # 失敗時
-      load_tags
-      flash.now[:alert] = @test.errors.full_messages.join("\n")
-      render :new, status: :unprocessable_entity
+    # 出題文
+    case kind
+    when :word_to_meaning
+      stem = "「#{word.term}」とは？"
+      set_if_possible(q, %i[content text body title prompt statement], stem)
+    else # :meaning_to_word
+      stem = excerpt_for_meaning(word) # ← 下のprivateメソッド
+      set_if_possible(q, %i[content text body title prompt statement], stem)
+    end
+
+    q.save! unless q.persisted?
+
+    # 既存回答がある場合の複製/再生成（元コードのまま）
+    if q.respond_to?(:question_choices)
+      choice_ids  = q.question_choices.select(:id)
+      has_answers = q.persisted? && AnswerSelection.where(question_choice_id: choice_ids).exists?
+      if has_answers
+        dup_q = q.dup
+        dup_q.word = q.word if dup_q.respond_to?(:word=)
+        dup_q.save!
+        q = dup_q
+      else
+        q.question_choices.destroy_all
+      end
+    end
+
+    # ---- 選択肢生成（プールは同じ範囲のみ） ----
+    if kind == :word_to_meaning
+      correct_text = safe_excerpt(word.meaning, banned: [word.term], max_len: 140)
+      base = pool.map { |w| safe_excerpt(w.meaning, banned: [w.term, word.term], max_len: 140) }
+                 .reject(&:blank?).uniq
+      distractors = base.sample(3)
+      while distractors.size < 3 && pool.any?
+        filler = safe_excerpt(pool.sample.meaning, banned: [word.term], max_len: 140)
+        distractors << filler if filler.present? && !distractors.include?(filler)
+      end
+      texts = ([correct_text] + distractors).shuffle
+
+    else # :meaning_to_word（※曖昧性を再度ケア）
+      correct_text = word.term.presence || "（単語未設定）"
+      stem = excerpt_for_meaning(word)
+      # ★ stemに当てはまって“正解になる”単語は誤選択肢から除外
+      ambiguous_terms = pool.select { |w| excerpt_for_meaning(w) == stem }.map(&:term)
+      base = pool.map(&:term).reject(&:blank?).uniq - ambiguous_terms
+      distractors = base.sample(3)
+      while distractors.size < 3 && base.any?
+        filler = (base - distractors).sample
+        break if filler.nil?
+        distractors << filler
+      end
+      # それでも3つそろわない場合は安全のため単語→意味に作り直し
+      if distractors.size < 3
+        kind = :word_to_meaning
+        correct_text = safe_excerpt(word.meaning, banned: [word.term], max_len: 140)
+        base = pool.map { |w| safe_excerpt(w.meaning, banned: [w.term, word.term], max_len: 140) }
+                   .reject(&:blank?).uniq
+        distractors = base.sample(3)
+        while distractors.size < 3 && pool.any?
+          filler = safe_excerpt(pool.sample.meaning, banned: [word.term], max_len: 140)
+          distractors << filler if filler.present? && !distractors.include?(filler)
+        end
+      end
+      texts = ([correct_text] + distractors).shuffle
+    end
+
+      texts.each do |txt|
+        attrs = { body: txt }
+        if q.question_choices.new.respond_to?(:correct=)
+          attrs[:correct] = (txt == correct_text)
+        elsif q.question_choices.new.respond_to?(:is_correct=)
+          attrs[:is_correct] = (txt == correct_text)
+        end
+        q.question_choices.create!(attrs)
+      end
+
+      @test.test_questions.create!(question: q, position: idx)
     end
   end
 
-  def show
+    redirect_to question_test_path(@test, pos: 1)
+  rescue ActiveRecord::RecordInvalid => e
+    load_tags
+    msg = @test&.errors&.full_messages&.join(" / ").presence || e.message
+    flash.now[:alert] = "テストの開始に失敗しました。#{msg}"
+    render :new, status: :unprocessable_entity
+  rescue => e
+    load_tags
+    Rails.logger.error("[TestsController#start] #{e.class}: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}")
+    flash.now[:alert] = "テストの開始に失敗しました。#{e.message}"
+    render :new, status: :unprocessable_entity
   end
+
+  def show;  end
 
   def result
     @total    = @test.test_questions.count
@@ -190,7 +226,8 @@ class TestsController < ApplicationController
 
   def test_setting_params
     params.require(:test_setting_form).permit(
-      :tag_id, :only_unlearned, :question_count, :question_type, :scoring
+      :tag_id, :question_count, :question_type, :scoring,
+      tag_ids: [] # 将来の複数選択に備えて許可
     )
   end
 
@@ -200,7 +237,7 @@ class TestsController < ApplicationController
     obj.public_send("#{attr}=", value) if attr && value.present?
   end
 
-  # 文章から禁止語を含まない1文を抜粋（残っていれば除去）して返す
+  # 文章から禁止語を含まない1文を抜粋
   def safe_excerpt(text, banned:, max_len: 140)
     return "" if text.blank?
     t = text.to_s.gsub(/\r\n|\r|\n/, "。")
@@ -211,5 +248,17 @@ class TestsController < ApplicationController
     banned.each { |w| s = s.gsub(Regexp.new(Regexp.escape(w)), "") if w.present? }
     s = s.strip
     s.length > max_len ? "#{s[0, max_len]}…" : s
+  end
+
+  # 「意味→単語」用の抜粋（対象の単語名は含めない）
+  def excerpt_for_meaning(word)
+    safe_excerpt(word.meaning, banned: [word.term], max_len: 120)
+  end
+
+  # 指定wordの stem（意味抜粋）が、プール内の他の単語にも一致するか？
+  def ambiguous_meaning_to_word?(word, pool_words)
+    stem = excerpt_for_meaning(word)
+    return false if stem.blank?
+    pool_words.any? { |w| excerpt_for_meaning(w) == stem }
   end
 end

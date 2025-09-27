@@ -23,7 +23,7 @@
 <main class="wrap">
   <h1>こんにちは、<%= @user.name.presence || @user.email %> さん</h1>
 
-  <<!-- サマリーカード -->
+  <!-- サマリーカード -->
   <section class="grid mt16">
     <div class="card"><h3 class="ttl">実施テスト数</h3><p class="stat"><%= @tests_count %></p></div>
     <div class="card"><h3 class="ttl">平均正答率</h3><p class="stat"><%= @avg_accuracy %>%</p></div>
@@ -52,7 +52,23 @@
         <% @recent_tests.each do |t| %>
           <tr>
             <td><%= t.finished_at ? l(t.finished_at, format: :custom) : "進行中" %></td>
-            <td><%= t.scope_unlearned? ? "未習得" : "全単語" %></td>
+            <td>
+              <% if t.respond_to?(:tags) && t.tags.any? %>
+                <%= t.tags.pluck(:name).join("、") %>
+              <% else %>
+                <td>
+                  <%= if t.respond_to?(:scope_label) && t.scope_label.present?
+                        t.scope_label
+                      elsif t.respond_to?(:scope_names) && t.scope_names.present?
+                        t.scope_names
+                      elsif t.respond_to?(:tags) && (t.tags.loaded? ? t.tags.any? : t.tags.exists?)
+                        (t.tags.loaded? ? t.tags.map(&:name) : t.tags.pluck(:name)).join("、")
+                      else
+                        "全単語"
+                      end %>
+                </td>
+              <% end %>
+            </td>
             <td><%= t.test_questions.count %></td>
             <td><%= t.accuracy %>%</td>
             <td><%= t.duration_sec ? "#{t.duration_sec}s" : "—" %></td>

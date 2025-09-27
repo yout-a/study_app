@@ -14,6 +14,6 @@ class DashboardsController < ApplicationController
     @tests_count  = stats[:tests_count]
     @avg_accuracy = stats[:avg_accuracy]
     @last_test_at = stats[:last_test_at]
+    @recent_tests = current_user.tests.includes(:tags).order(created_at: :desc).limit(10)
   end
 end
-

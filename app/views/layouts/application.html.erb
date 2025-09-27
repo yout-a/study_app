@@ -15,11 +15,17 @@
   </head>
 
   <body>
-    <% if notice %>
-      <div style="background:#ecf; padding:10px 14px"><%= notice %></div>
-    <% end %>
-    <% if alert %>
-      <div style="background:#fee2e2; padding:10px 14px"><%= alert %></div>
+    <% flash.each do |type, message| %>
+      <% text =
+          if message.is_a?(Symbol)
+            I18n.t("devise.sessions.#{message}", default: I18n.t(message, default: message.to_s))
+          else
+            message
+          end %>
+      <div style="padding:10px 14px; margin:6px 0; border-radius:4px;
+                  <%= type == "notice" ? "background:#ecf;" : "background:#fee2e2;" %>">
+        <%= text %>
+      </div>
     <% end %>
 
     <%= yield %>

@@ -5,6 +5,8 @@ class Test < ApplicationRecord
   has_many :test_questions, dependent: :destroy
   has_many :questions, through: :test_questions
   has_many :answers, dependent: :destroy
+  has_many :test_taggings, dependent: :destroy
+  has_many :tags, through: :test_taggings
 
   # enum（整数カラム）
   enum scope:   { unlearned: 0, all_words: 1 }, _prefix: :scope           # 出題範囲
@@ -39,5 +41,15 @@ class Test < ApplicationRecord
   def duration_sec
     return nil unless started_at && finished_at
     (finished_at - started_at).to_i
+  end
+
+  def scope_label
+    return scope_names if scope_names.present?
+
+    if respond_to?(:tags) && tags.loaded? ? tags.any? : tags.exists?
+      (tags.loaded? ? tags.map(&:name) : tags.pluck(:name)).join("、")
+    else
+      scope == "unlearned" ? "未習得" : "全単語"
+    end
   end
 end

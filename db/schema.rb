@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_09_23_074548) do
+ActiveRecord::Schema[7.1].define(version: 2025_09_26_142635) do
   create_table "answer_selections", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "answer_id", null: false
     t.bigint "question_choice_id", null: false
@@ -79,6 +79,16 @@ ActiveRecord::Schema[7.1].define(version: 2025_09_23_074548) do
     t.index ["test_id", "position"], name: "index_test_questions_on_test_id_and_position", unique: true
   end
 
+  create_table "test_taggings", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
+    t.bigint "test_id", null: false
+    t.bigint "tag_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["tag_id"], name: "index_test_taggings_on_tag_id"
+    t.index ["test_id", "tag_id"], name: "index_test_taggings_on_test_id_and_tag_id", unique: true
+    t.index ["test_id"], name: "index_test_taggings_on_test_id"
+  end
+
   create_table "tests", charset: "utf8mb4", collation: "utf8mb4_general_ci", force: :cascade do |t|
     t.bigint "user_id", null: false
     t.integer "scope"
@@ -90,6 +100,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_09_23_074548) do
     t.datetime "finished_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.text "scope_names", comment: "選択時のタグ名を履歴として固定保存。カンマ区切り"
     t.index ["user_id"], name: "index_tests_on_user_id"
   end
 
@@ -129,6 +140,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_09_23_074548) do
   add_foreign_key "tags", "users"
   add_foreign_key "test_questions", "questions"
   add_foreign_key "test_questions", "tests"
+  add_foreign_key "test_taggings", "tags"
+  add_foreign_key "test_taggings", "tests"
   add_foreign_key "tests", "users"
   add_foreign_key "words", "users"
 end
